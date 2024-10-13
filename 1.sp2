@@ -1,0 +1,12 @@
+fn foo1_2(x: Int, y: Int) -> Int {
+    let z = x + y
+    return z
+}
+ 
+let x = 1
+let y = 2
+
+
+fn bar(s: String) -> String {
+    return s + " ."
+}

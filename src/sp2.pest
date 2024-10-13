@@ -1,0 +1,37 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" }
+
+program = { SOI ~ (function_def | function_call | statement )* ~ EOI }
+
+function_def = { "fn" ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ type_annotation ~ block }
+param_list   = { param ~ ("," ~ param)* }
+param        = { ident ~ ":" ~ type_annotation }
+
+statement            = { let_statement | expression_statement | return_statement }
+let_statement        = { "let" ~ ident ~ "=" ~ expression }
+expression_statement = { expression }
+return_statement     = { "return" ~ expression }
+// should this be a part of function_def/function?
+// Should it be expression? We need to actually evaluate it in a 
+// scope of a block
+
+block = { "{" ~ statement* ~ "}" }
+
+function_call = { ident ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+expression       =  { binary_operation }
+binary_operation =  { unary_operation ~ (operator ~ unary_operation)* }
+unary_operation  = _{ primary }
+// We'll add unary operators here later if needed
+primary          = _{ literal | ident | function_call | "(" ~ expression ~ ")" }
+// confusing name, what is the exact purpose/scope?
+
+
+operator = { add_op | mul_op }
+add_op   = { "+" | "-" }
+mul_op   = { "*" | "/" }
+
+type_annotation =  { "Int" | "String" }
+ident           = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+literal         =  { integer | string }
+integer         = @{ ASCII_DIGIT+ }
+string          = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
