@@ -14,7 +14,7 @@ enum AstNode {
         name: String,
         params: Vec<(String, String)>,
         return_type: String,
-        body: Box<AstNode>,
+        body: Vec<AstNode>, // Now a Vec of Blocks
     },
     Block(Vec<AstNode>),
     LetStatement {
@@ -22,6 +22,7 @@ enum AstNode {
         value: Box<AstNode>,
     },
     ReturnStatement(Box<AstNode>),
+    ExpressionStatement(Box<AstNode>),
     BinaryOperation {
         left: Box<AstNode>,
         operator: String,
@@ -36,13 +37,15 @@ enum AstNode {
     StringLiteral(String),
 }
 
+
 fn parse_program(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::program);
     let nodes: Vec<AstNode> = pair.into_inner()
         .filter_map(|pair| match pair.as_rule() {
             Rule::function_def => Some(parse_function_def(pair)),
-            Rule::statement => Some(parse_statement(pair)),
-            Rule::EOI => None,  // Explicitly ignore EOI
+            Rule::top_level_statement => Some(parse_top_level_statement(pair)),
+            Rule::EOI => None,
+            Rule::block => Some(parse_block(pair)),
             _ => {
                 println!("Unexpected rule in program: {:?}", pair.as_rule());
                 None
@@ -52,19 +55,61 @@ fn parse_program(pair: Pair<Rule>) -> AstNode {
     AstNode::Program(nodes)
 }
 
+
+fn parse_top_level_statement(pair: Pair<Rule>) -> AstNode {
+    assert_eq!(pair.as_rule(), Rule::top_level_statement);
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::let_statement => parse_let_statement(inner),
+        Rule::function_call => parse_function_call(inner),
+        _ => unreachable!(),
+    }
+}
+
+// Update parse_function_def
 fn parse_function_def(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::function_def);
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let params = parse_param_list(inner.next().unwrap());
     let return_type = inner.next().unwrap().as_str().to_string();
-    let body = Box::new(parse_block(inner.next().unwrap()));
+    
+    // Parse all blocks in the function body
+    let body: Vec<AstNode> = inner.next().unwrap().into_inner()
+        .filter(|p| p.as_rule() == Rule::block)
+        .map(parse_block)
+        .collect();
 
     AstNode::FunctionDef {
         name,
         params,
         return_type,
         body,
+    }
+}
+
+
+
+
+fn parse_function_call(pair: Pair<Rule>) -> AstNode {
+    assert_eq!(pair.as_rule(), Rule::function_call);
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    let args = if let Some(arg_list) = inner.next() {
+        arg_list.into_inner().map(parse_expression).collect()
+    } else {
+        Vec::new()
+    };
+    AstNode::FunctionCall { name, args }
+}
+
+fn parse_expression_atom(pair: Pair<Rule>) -> AstNode {
+    match pair.as_rule() {
+        Rule::literal => parse_literal(pair),
+        Rule::ident => AstNode::Identifier(pair.as_str().to_string()),
+        Rule::function_call => parse_function_call(pair),
+        Rule::expression => parse_expression(pair),
+        _ => unreachable!(),
     }
 }
 
@@ -93,11 +138,8 @@ fn parse_statement(pair: Pair<Rule>) -> AstNode {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
         Rule::let_statement => parse_let_statement(inner),
-        Rule::expression_statement => parse_expression(inner.into_inner().next().unwrap()),
-        Rule::return_statement => {
-            let expr = inner.into_inner().next().unwrap();
-            AstNode::ReturnStatement(Box::new(parse_expression(expr)))
-        }
+        Rule::return_statement => parse_return_statement(inner),
+        Rule::expression_statement => parse_expression_statement(inner),
         _ => unreachable!(),
     }
 }
@@ -110,10 +152,23 @@ fn parse_let_statement(pair: Pair<Rule>) -> AstNode {
     AstNode::LetStatement { name, value }
 }
 
+fn parse_expression_statement(pair: Pair<Rule>) -> AstNode {
+    assert_eq!(pair.as_rule(), Rule::expression_statement);
+    let expr = pair.into_inner().next().unwrap();
+    AstNode::ExpressionStatement(Box::new(parse_expression(expr)))
+}
+
 fn parse_expression(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::expression);
     parse_binary_operation(pair.into_inner().next().unwrap())
 }
+
+fn parse_return_statement(pair: Pair<Rule>) -> AstNode {
+    assert_eq!(pair.as_rule(), Rule::return_statement);
+    let expr = pair.into_inner().next().unwrap();
+    AstNode::ReturnStatement(Box::new(parse_expression(expr)))
+}
+
 
 fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::binary_operation);
@@ -134,7 +189,7 @@ fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
 
 fn parse_unary_operation(pair: Pair<Rule>) -> AstNode {
     // For now, this just forwards to parse_primary
-    parse_primary(pair)
+    parse_expression_atom(pair)
 }
 
 fn parse_primary(pair: Pair<Rule>) -> AstNode {
@@ -189,26 +244,22 @@ fn unescape(s: &str) -> String {
     unescaped
 }
 
-fn parse_function_call(pair: Pair<Rule>) -> AstNode {
-    assert_eq!(pair.as_rule(), Rule::function_call);
-    let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
-    let args = inner.map(parse_expression).collect();
-    AstNode::FunctionCall { name, args }
-}
-
-
 fn main() {
     let input = r#"
-    fn foo1_2(x: Int, y: Int) -> Int {
-        let z = x + y
-        return z
-    }
-    let x = 1
-    let y = 2
-    fn bar(s: String) -> String {
-        return s + " ."
-    }
+fn foo1_2(x: Int, y: Int) -> Int {
+    let z = x + y
+    return z
+}
+ 
+let x = 1
+let y = 2
+
+
+fn bar(s: String) -> String {
+    return s + " ."
+{}
+}
+{}
     "#;
 
     let mut pairs = SP2parser::parse(Rule::program, input).unwrap();

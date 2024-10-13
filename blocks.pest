@@ -39,7 +39,7 @@ statement            = { let_statement | return_statement | expression_statement
 block = { "{" ~ statement* ~ "}" }
 
 // Function structure
-function_def = { "fn" ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ type_annotation ~ "{" ~ (block | statement)* ~ "}" }
+function_def = { "fn" ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ type_annotation ~ "{" ~ (statement | block)* ~ "}" }
 
 // Top-level structure
 top_level_statement = { let_statement | function_call }
