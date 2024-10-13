@@ -28,6 +28,7 @@ param         = { ident ~ ":" ~ type_annotation }
 param_list    = { param ~ ("," ~ param)* }
 argument_list = { expression ~ ("," ~ expression)* }
 function_call = { ident ~ "(" ~ argument_list? ~ ")" }
+function_def = { "fn" ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ type_annotation ~ "{" ~ (block | statement)* ~ "}" }
 
 // Statements
 let_statement        = { "let" ~ ident ~ "=" ~ expression }
@@ -37,9 +38,6 @@ statement            = { let_statement | return_statement | expression_statement
 
 // Block structure
 block = { "{" ~ statement* ~ "}" }
-
-// Function structure
-function_def = { "fn" ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ type_annotation ~ "{" ~ (block | statement)* ~ "}" }
 
 // Top-level structure
 top_level_statement = { let_statement | function_call }

@@ -1,3 +1,6 @@
+mod ir;
+use ir::generate_qbe;
+
 use std::fs;
 
 use pest::{
@@ -11,7 +14,7 @@ use pest_derive::Parser;
 struct SP2parser;
 
 #[derive(Debug)]
-enum AstNode {
+pub enum AstNode {
     Program(Vec<AstNode>),
     FunctionDef {
         name: String,
@@ -114,6 +117,7 @@ fn parse_expression_atom(pair: Pair<Rule>) -> AstNode {
     }
 }
 
+
 fn parse_param_list(pair: Pair<Rule>) -> Vec<(String, String)> {
     assert_eq!(pair.as_rule(), Rule::param_list);
     pair.into_inner()
@@ -190,6 +194,7 @@ fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
 }
 
 fn parse_unary_operation(pair: Pair<Rule>) -> AstNode {
+    // assert_eq!(pair.as_rule(), Rule::unary_operation); - error
     parse_expression_atom(pair)
 }
 
@@ -250,19 +255,12 @@ fn foo1_2(x: Int, y: Int) -> Int {
     let z = x + y
     return z
 }
- 
-let x = 1
-let y = 2
 
-
-fn bar(s: String) -> String {
-    return s + " ."
-{}
-}
-{}
     "#;
 
     let mut pairs = SP2parser::parse(Rule::program, input).unwrap();
     let ast = parse_program(pairs.next().unwrap());
     println!("{:#?}", ast);
+    let qbe_ir = generate_qbe(&ast);
+    println!("Generated QBE IR:\n{}", qbe_ir);
 }
