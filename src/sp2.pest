@@ -2,9 +2,9 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" }
 
 // Basic types
-ident           = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-integer         = @{ ASCII_DIGIT+ }
-string          = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+integer = @{ ASCII_DIGIT+ }
+string  = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Operators
 add_op   = { "+" | "-" }
@@ -12,7 +12,7 @@ mul_op   = { "*" | "/" }
 operator = { add_op | mul_op }
 
 // Type annotations
-type_annotation =  { "Int" | "String" }
+type_annotation = { "Int" | "String" }
 
 // Literals and basic expressions
 literal         =  { integer | string }
@@ -24,8 +24,8 @@ binary_operation =  { unary_operation ~ (operator ~ unary_operation)* }
 expression       =  { binary_operation }
 
 // Function-related rules
-param        = { ident ~ ":" ~ type_annotation }
-param_list   = { param ~ ("," ~ param)* }
+param         = { ident ~ ":" ~ type_annotation }
+param_list    = { param ~ ("," ~ param)* }
 argument_list = { expression ~ ("," ~ expression)* }
 function_call = { ident ~ "(" ~ argument_list? ~ ")" }
 
