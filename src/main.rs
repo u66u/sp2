@@ -1,6 +1,9 @@
 use std::fs;
 
-use pest::{iterators::{Pair, Pairs}, Parser};
+use pest::{
+    iterators::{Pair, Pairs},
+    Parser,
+};
 use pest_derive::Parser;
 
 #[derive(Parser)]
@@ -14,7 +17,7 @@ enum AstNode {
         name: String,
         params: Vec<(String, String)>,
         return_type: String,
-        body: Vec<AstNode>, // Now a Vec of Blocks
+        body: Vec<AstNode>,
     },
     Block(Vec<AstNode>),
     LetStatement {
@@ -37,24 +40,23 @@ enum AstNode {
     StringLiteral(String),
 }
 
-
 fn parse_program(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::program);
-    let nodes: Vec<AstNode> = pair.into_inner()
+    let nodes: Vec<AstNode> = pair
+        .into_inner()
         .filter_map(|pair| match pair.as_rule() {
             Rule::function_def => Some(parse_function_def(pair)),
             Rule::top_level_statement => Some(parse_top_level_statement(pair)),
-            Rule::EOI => None,
             Rule::block => Some(parse_block(pair)),
+            Rule::EOI => None,
             _ => {
                 println!("Unexpected rule in program: {:?}", pair.as_rule());
                 None
-            },
+            }
         })
         .collect();
     AstNode::Program(nodes)
 }
-
 
 fn parse_top_level_statement(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::top_level_statement);
@@ -66,18 +68,20 @@ fn parse_top_level_statement(pair: Pair<Rule>) -> AstNode {
     }
 }
 
-// Update parse_function_def
 fn parse_function_def(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::function_def);
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let params = parse_param_list(inner.next().unwrap());
     let return_type = inner.next().unwrap().as_str().to_string();
-    
-    // Parse all blocks in the function body
-    let body: Vec<AstNode> = inner.next().unwrap().into_inner()
-        .filter(|p| p.as_rule() == Rule::block)
-        .map(parse_block)
+
+    let body: Vec<AstNode> = inner
+        .filter(|p| p.as_rule() == Rule::statement || p.as_rule() == Rule::block)
+        .map(|p| match p.as_rule() {
+            Rule::statement => parse_statement(p),
+            Rule::block => parse_block(p),
+            _ => unreachable!(),
+        })
         .collect();
 
     AstNode::FunctionDef {
@@ -87,9 +91,6 @@ fn parse_function_def(pair: Pair<Rule>) -> AstNode {
         body,
     }
 }
-
-
-
 
 fn parse_function_call(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::function_call);
@@ -127,7 +128,9 @@ fn parse_param_list(pair: Pair<Rule>) -> Vec<(String, String)> {
 
 fn parse_block(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::block);
-    let statements: Vec<AstNode> = pair.into_inner()
+    let statements: Vec<AstNode> = pair
+        .into_inner()
+        .filter(|p| p.as_rule() == Rule::statement)
         .map(parse_statement)
         .collect();
     AstNode::Block(statements)
@@ -169,7 +172,6 @@ fn parse_return_statement(pair: Pair<Rule>) -> AstNode {
     AstNode::ReturnStatement(Box::new(parse_expression(expr)))
 }
 
-
 fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::binary_operation);
     let mut pairs = pair.into_inner();
@@ -188,7 +190,6 @@ fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
 }
 
 fn parse_unary_operation(pair: Pair<Rule>) -> AstNode {
-    // For now, this just forwards to parse_primary
     parse_expression_atom(pair)
 }
 
@@ -213,12 +214,11 @@ fn parse_literal(pair: Pair<Rule>) -> AstNode {
             let unquoted = &raw_string[1..raw_string.len() - 1];
             let unescaped = unescape(unquoted);
             AstNode::StringLiteral(unescaped)
-        },
+        }
         _ => unreachable!(),
     }
 }
 
-// Helper function to unescape string literals
 fn unescape(s: &str) -> String {
     let mut unescaped = String::with_capacity(s.len());
     let mut chars = s.chars();
