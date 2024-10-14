@@ -12,7 +12,7 @@ mul_op   = { "*" | "/" }
 operator = { add_op | mul_op }
 
 // Type annotations
-type_annotation = { "Int" | "String" }
+type_annotation = { "Int" | "String" | "None" }
 
 // Literals and basic expressions
 literal         =  { integer | string }
@@ -20,12 +20,13 @@ expression_atom = _{ literal | ident | function_call | "(" ~ expression ~ ")" }
 
 // Expressions
 unary_operation  = _{ expression_atom }
-binary_operation =  { unary_operation ~ (operator ~ unary_operation)* }
-expression       =  { binary_operation }
+binary_operation = { (function_call | expression_atom) ~ (operator ~ (function_call | expression_atom))* }
+expression = { function_call | binary_operation | expression_atom }
+
 
 // Function-related rules
-param         = { ident ~ ":" ~ type_annotation }
-param_list    = { param ~ ("," ~ param)* }
+param_list = { param ~ ("," ~ param)* }
+param = { ident ~ ":" ~ type_annotation }
 argument_list = { expression ~ ("," ~ expression)* }
 function_call = { ident ~ "(" ~ argument_list? ~ ")" }
 function_def = { "fn" ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ type_annotation ~ "{" ~ (block | statement)* ~ "}" }
