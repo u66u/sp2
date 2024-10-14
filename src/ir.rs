@@ -3,14 +3,28 @@ use crate::AstNode;
 pub fn generate_qbe(ast: &AstNode) -> String {
     let mut output = String::new();
 
+    output.push_str("function $print(w %x) {\n");
+    output.push_str("@start\n");
+    output.push_str("    call $printf(l $fmt, w %x)\n");
+    output.push_str("    ret\n");
+    output.push_str("}\n\n");
+
+    output.push_str("data $fmt = { b \"%d\\n\", b 0 }\n\n");
+
     match ast {
         AstNode::Program(nodes) => {
             for node in nodes {
                 match node {
-                    AstNode::FunctionDef { name, params, return_type: _, body } => {
+                    AstNode::FunctionDef {
+                        name,
+                        params,
+                        return_type,
+                        body,
+                    } => {
                         output.push_str(&format!("export function w ${name}("));
-                        
-                        let params: Vec<String> = params.iter()
+
+                        let params: Vec<String> = params
+                            .iter()
                             .map(|(name, _)| format!("w %{name}"))
                             .collect();
                         output.push_str(&params.join(", "));
@@ -18,75 +32,77 @@ pub fn generate_qbe(ast: &AstNode) -> String {
 
                         output.push_str("@start\n");
                         for stmt in body {
-                            match stmt {
-                                AstNode::LetStatement { name, value } => {
-                                    match value.as_ref() {
-                                        AstNode::BinaryOperation { left, operator, right } => {
-                                            let left = match left.as_ref() {
-                                                AstNode::Identifier(id) => format!("%{id}"),
-                                                _ => unreachable!("Expected identifier"),
-                                            };
-                                            let right = match right.as_ref() {
-                                                AstNode::Identifier(id) => format!("%{id}"),
-                                                _ => unreachable!("Expected identifier"),
-                                            };
-                                            let op = match operator.as_str() {
-                                                "+" => "add",
-                                                "-" => "sub",
-                                                "*" => "mul",
-                                                "/" => "div",
-                                                _ => unreachable!("Unsupported operator"),
-                                            };
-                                            output.push_str(&format!("    %{name} =w {op} {left}, {right}\n"));
-                                        },
-                                        AstNode::FunctionCall { name: func_name, args } => {
-                                            let args: Vec<String> = args.iter()
-                                                .map(|arg| match arg {
-                                                    AstNode::Identifier(id) => format!("w %{id}"),
-                                                    AstNode::IntLiteral(val) => format!("w {val}"),
-                                                    _ => unreachable!("Unsupported argument type"),
-                                                })
-                                                .collect();
-                                            output.push_str(&format!("    %{name} =w call ${func_name}({})\n", args.join(", ")));
-                                        },
-                                        _ => unreachable!("Expected binary operation or function call"),
-                                    }
-                                },
-                                AstNode::ReturnStatement(expr) => {
-                                    match expr.as_ref() {
-                                        AstNode::Identifier(id) => {
-                                            output.push_str(&format!("    ret %{id}\n"));
-                                        },
-                                        _ => unreachable!("Expected identifier in return statement"),
-                                    }
-                                },
-                                AstNode::ExpressionStatement(expr) => {
-                                    match expr.as_ref() {
-                                        AstNode::FunctionCall { name, args } => {
-                                            let args: Vec<String> = args.iter()
-                                                .map(|arg| match arg {
-                                                    AstNode::Identifier(id) => format!("w %{id}"),
-                                                    AstNode::IntLiteral(val) => format!("w {val}"),
-                                                    _ => unreachable!("Unsupported argument type"),
-                                                })
-                                                .collect();
-                                            output.push_str(&format!("    call ${name}({})\n", args.join(", ")));
-                                        },
-                                        _ => unreachable!("Expected function call in expression statement"),
-                                    }
-                                },
-                                _ => unreachable!("Unexpected statement type"),
-                            }
+                            generate_statement(stmt, &mut output);
                         }
 
                         output.push_str("}\n\n");
-                    },
-                    _ => unreachable!("Unexpected top-level node"),
+                    }
+                    AstNode::LetStatement { name, value } => {
+                        output.push_str(&format!("export data ${name} = {{ w ",));
+                        generate_expression(value, &mut output);
+                        output.push_str(" }\n\n");
+                    }
+                    _ => unreachable!("Unexpected top-level node: {:?}", node),
                 }
             }
-        },
+        }
         _ => unreachable!("Expected Program node"),
     }
 
     output
+}
+
+fn generate_statement(stmt: &AstNode, output: &mut String) {
+    match stmt {
+        AstNode::LetStatement { name, value } => {
+            output.push_str(&format!("    %{name} =w "));
+            generate_expression(value, output);
+            output.push_str("\n");
+        }
+        AstNode::ReturnStatement(expr) => {
+            output.push_str("    ret ");
+            generate_expression(expr, output);
+            output.push_str("\n");
+        }
+        AstNode::ExpressionStatement(expr) => {
+            generate_expression(expr, output);
+            output.push_str("\n");
+        }
+        _ => unreachable!("Unexpected statement type: {:?}", stmt),
+    }
+}
+
+fn generate_expression(expr: &AstNode, output: &mut String) {
+    match expr {
+        AstNode::Identifier(id) => output.push_str(&format!("%{id}")),
+        AstNode::IntLiteral(val) => output.push_str(&val.to_string()),
+        AstNode::BinaryOperation {
+            left,
+            operator,
+            right,
+        } => {
+            let op = match operator.as_str() {
+                "+" => "add",
+                "-" => "sub",
+                "*" => "mul",
+                "/" => "div",
+                _ => unreachable!("Unsupported operator"),
+            };
+            output.push_str(&format!("{op} "));
+            generate_expression(left, output);
+            output.push_str(", ");
+            generate_expression(right, output);
+        }
+        AstNode::FunctionCall { name, args } => {
+            output.push_str(&format!("call ${name}("));
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    output.push_str(", ");
+                }
+                generate_expression(arg, output);
+            }
+            output.push_str(")");
+        }
+        _ => unreachable!("Unexpected expression type: {:?}", expr),
+    }
 }

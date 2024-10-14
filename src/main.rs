@@ -75,8 +75,24 @@ fn parse_function_def(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::function_def);
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
-    let params = parse_param_list(inner.next().unwrap());
-    let return_type = inner.next().unwrap().as_str().to_string();
+
+    println!("Function name: {}", name);
+
+    let params_pair = inner.next().unwrap();
+    println!("Params pair rule: {:?}", params_pair.as_rule());
+    println!("Params pair content: {}", params_pair.as_str());
+
+    let params = if params_pair.as_rule() == Rule::param_list {
+        parse_param_list(params_pair.clone())
+    } else {
+        Vec::new()
+    };
+
+    let return_type = if params.is_empty() {
+        params_pair.as_str().to_string()
+    } else {
+        inner.next().unwrap().as_str().to_string()
+    };
 
     let body: Vec<AstNode> = inner
         .filter(|p| p.as_rule() == Rule::statement || p.as_rule() == Rule::block)
@@ -113,14 +129,18 @@ fn parse_expression_atom(pair: Pair<Rule>) -> AstNode {
         Rule::ident => AstNode::Identifier(pair.as_str().to_string()),
         Rule::function_call => parse_function_call(pair),
         Rule::expression => parse_expression(pair),
-        _ => unreachable!(),
+        _ => unreachable!("Unexpected rule in expression_atom: {:?}", pair.as_rule()),
     }
 }
 
-
 fn parse_param_list(pair: Pair<Rule>) -> Vec<(String, String)> {
+    println!("Parsing rule: {:?}", pair.as_rule());
+    println!("Pair content: {}", pair.as_str());
+
     assert_eq!(pair.as_rule(), Rule::param_list);
+
     pair.into_inner()
+        .filter(|p| p.as_rule() == Rule::param)
         .map(|param| {
             let mut inner = param.into_inner();
             let name = inner.next().unwrap().as_str().to_string();
@@ -167,7 +187,27 @@ fn parse_expression_statement(pair: Pair<Rule>) -> AstNode {
 
 fn parse_expression(pair: Pair<Rule>) -> AstNode {
     assert_eq!(pair.as_rule(), Rule::expression);
-    parse_binary_operation(pair.into_inner().next().unwrap())
+    let mut inner_rules = pair.into_inner();
+
+    let first = inner_rules.next().unwrap();
+    let mut expr = match first.as_rule() {
+        Rule::binary_operation => parse_binary_operation(first),
+        Rule::function_call => parse_function_call(first),
+        Rule::ident => AstNode::Identifier(first.as_str().to_string()),
+        Rule::literal => parse_literal(first),
+        _ => unreachable!("Unexpected rule in expression: {:?}", first.as_rule()),
+    };
+
+    while let Some(op) = inner_rules.next() {
+        let right = inner_rules.next().unwrap();
+        expr = AstNode::BinaryOperation {
+            left: Box::new(expr),
+            operator: op.as_str().to_string(),
+            right: Box::new(parse_expression(right)),
+        };
+    }
+
+    expr
 }
 
 fn parse_return_statement(pair: Pair<Rule>) -> AstNode {
@@ -177,12 +217,11 @@ fn parse_return_statement(pair: Pair<Rule>) -> AstNode {
 }
 
 fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
-    assert_eq!(pair.as_rule(), Rule::binary_operation);
     let mut pairs = pair.into_inner();
-    let mut left = parse_unary_operation(pairs.next().unwrap());
+    let mut left = parse_expression_atom(pairs.next().unwrap());
 
     while let Some(op) = pairs.next() {
-        let right = parse_unary_operation(pairs.next().unwrap());
+        let right = parse_expression_atom(pairs.next().unwrap());
         left = AstNode::BinaryOperation {
             left: Box::new(left),
             operator: op.as_str().to_string(),
@@ -194,7 +233,6 @@ fn parse_binary_operation(pair: Pair<Rule>) -> AstNode {
 }
 
 fn parse_unary_operation(pair: Pair<Rule>) -> AstNode {
-    // assert_eq!(pair.as_rule(), Rule::unary_operation); - error
     parse_expression_atom(pair)
 }
 
@@ -214,7 +252,6 @@ fn parse_literal(pair: Pair<Rule>) -> AstNode {
     match inner.as_rule() {
         Rule::integer => AstNode::IntLiteral(inner.as_str().parse().unwrap()),
         Rule::string => {
-            // Remove the surrounding quotes and unescape the string
             let raw_string = inner.as_str();
             let unquoted = &raw_string[1..raw_string.len() - 1];
             let unescaped = unescape(unquoted);
@@ -255,6 +292,11 @@ fn foo1_2(x: Int, y: Int) -> Int {
     let z = x + y
     return z
 }
+
+fn t() -> None {
+}
+
+let z = foo1_2(5, x)
 
     "#;
 
