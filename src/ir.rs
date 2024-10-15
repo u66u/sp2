@@ -1,86 +1,127 @@
 use crate::AstNode;
+use std::collections::HashMap;
 
 pub fn generate_qbe(ast: &AstNode) -> String {
     let mut output = String::new();
+    let mut global_vars = HashMap::new();
+    let mut temp_counter = 0;
 
-    output.push_str("function $print(w %x) {\n");
+    output.push_str("function w $print(w %x) {\n");
     output.push_str("@start\n");
     output.push_str("    call $printf(l $fmt, w %x)\n");
-    output.push_str("    ret\n");
+    output.push_str("    ret 0\n");
     output.push_str("}\n\n");
 
     output.push_str("data $fmt = { b \"%d\\n\", b 0 }\n\n");
 
-    match ast {
-        AstNode::Program(nodes) => {
-            for node in nodes {
-                match node {
-                    AstNode::FunctionDef {
+    if let AstNode::Program(nodes) = ast {
+        for node in nodes {
+            match node {
+                AstNode::FunctionDef {
+                    name,
+                    params,
+                    return_type,
+                    body,
+                } => {
+                    generate_function(
                         name,
                         params,
                         return_type,
                         body,
-                    } => {
-                        output.push_str(&format!("export function w ${name}("));
-
-                        let params: Vec<String> = params
-                            .iter()
-                            .map(|(name, _)| format!("w %{name}"))
-                            .collect();
-                        output.push_str(&params.join(", "));
-                        output.push_str(") {\n");
-
-                        output.push_str("@start\n");
-                        for stmt in body {
-                            generate_statement(stmt, &mut output);
-                        }
-
-                        output.push_str("}\n\n");
-                    }
-                    AstNode::LetStatement { name, value } => {
-                        output.push_str(&format!("export data ${name} = {{ w ",));
-                        generate_expression(value, &mut output);
-                        output.push_str(" }\n\n");
-                    }
-                    _ => unreachable!("Unexpected top-level node: {:?}", node),
+                        &mut output,
+                        &mut temp_counter,
+                    );
                 }
+                AstNode::LetStatement { name, value } => {
+                    global_vars.insert(name.clone(), value.clone());
+                }
+                _ => unreachable!("Unexpected top-level node: {:?}", node),
             }
         }
-        _ => unreachable!("Expected Program node"),
+    }
+
+    for (name, value) in global_vars {
+        generate_global_variable(&name, value, &mut output, &mut temp_counter);
     }
 
     output
 }
 
-fn generate_statement(stmt: &AstNode, output: &mut String) {
+fn generate_function(
+    name: &str,
+    params: &[(String, String)],
+    return_type: &str,
+    body: &[AstNode],
+    output: &mut String,
+    temp_counter: &mut i32,
+) {
+    let qbe_return_type = convert_type_str(return_type);
+    output.push_str(&format!("export function {} ${}(", qbe_return_type, name));
+
+    let params: Vec<String> = params
+        .iter()
+        .map(|(name, typ)| format!("{} %{}", convert_type_str(typ), name))
+        .collect();
+    output.push_str(&params.join(", "));
+    output.push_str(") {\n@start\n");
+
+    for stmt in body {
+        generate_statement(stmt, output, temp_counter);
+    }
+
+    if !body
+        .last()
+        .map_or(false, |stmt| matches!(stmt, AstNode::ReturnStatement(_)))
+    {
+        output.push_str("    ret 0\n");
+    }
+
+    output.push_str("}\n\n");
+}
+
+fn generate_global_variable(
+    name: &str,
+    value: Box<AstNode>,
+    output: &mut String,
+    temp_counter: &mut i32,
+) {
+    output.push_str(&format!("data ${} = {{ w 0 }}\n\n", name));
+    output.push_str(&format!("function w $init_{}() {{\n", name));
+    output.push_str("@start\n");
+    let temp = generate_expression(&value, output, temp_counter);
+    output.push_str(&format!("    storew {}, ${}\n", temp, name));
+    output.push_str("    ret 0\n");
+    output.push_str("}\n\n");
+}
+
+fn generate_statement(stmt: &AstNode, output: &mut String, temp_counter: &mut i32) {
     match stmt {
         AstNode::LetStatement { name, value } => {
-            output.push_str(&format!("    %{name} =w "));
-            generate_expression(value, output);
-            output.push_str("\n");
+            let temp = generate_expression(value, output, temp_counter);
+            output.push_str(&format!("    %{} =w copy {}\n", name, temp));
         }
         AstNode::ReturnStatement(expr) => {
-            output.push_str("    ret ");
-            generate_expression(expr, output);
-            output.push_str("\n");
+            let temp = generate_expression(expr, output, temp_counter);
+            output.push_str(&format!("    ret {}\n", temp));
         }
         AstNode::ExpressionStatement(expr) => {
-            generate_expression(expr, output);
-            output.push_str("\n");
+            generate_expression(expr, output, temp_counter);
         }
         _ => unreachable!("Unexpected statement type: {:?}", stmt),
     }
 }
 
-fn generate_expression(expr: &AstNode, output: &mut String) {
+fn generate_expression(expr: &AstNode, output: &mut String, temp_counter: &mut i32) -> String {
     match expr {
-        AstNode::Identifier(id) => output.push_str(&format!("%{id}")),
-        AstNode::IntLiteral(val) => output.push_str(&val.to_string()),
+        AstNode::Identifier(id) => format!("%{}", id),
+        AstNode::IntLiteral(val) => val.to_string(),
         AstNode::BinaryOperation {
             left,
             operator,
             right,
         } => {
+            let left_temp = generate_expression(left, output, temp_counter);
+            let right_temp = generate_expression(right, output, temp_counter);
             let op = match operator.as_str() {
                 "+" => "add",
                 "-" => "sub",
@@ -88,21 +129,38 @@ fn generate_expression(expr: &AstNode, output: &mut String) {
                 "/" => "div",
                 _ => unreachable!("Unsupported operator"),
             };
-            output.push_str(&format!("{op} "));
-            generate_expression(left, output);
-            output.push_str(", ");
-            generate_expression(right, output);
+            *temp_counter += 1;
+            let result_temp = format!("%t{}", temp_counter);
+            output.push_str(&format!(
+                "    {} =w {} {}, {}\n",
+                result_temp, op, left_temp, right_temp
+            ));
+            result_temp
         }
         AstNode::FunctionCall { name, args } => {
-            output.push_str(&format!("call ${name}("));
-            for (i, arg) in args.iter().enumerate() {
-                if i > 0 {
-                    output.push_str(", ");
-                }
-                generate_expression(arg, output);
+            let mut arg_temps = Vec::new();
+            for arg in args {
+                arg_temps.push(generate_expression(arg, output, temp_counter));
             }
-            output.push_str(")");
+            *temp_counter += 1;
+            let result_temp = format!("%t{}", temp_counter);
+            output.push_str(&format!(
+                "    {} =w call ${}({})\n",
+                result_temp,
+                name,
+                arg_temps.join(", ")
+            ));
+            result_temp
         }
         _ => unreachable!("Unexpected expression type: {:?}", expr),
+    }
+}
+
+fn convert_type_str(typ: &str) -> &'static str {
+    match typ {
+        "Int" => "w",
+        "String" => "l",
+        "None" => "w",
+        _ => unreachable!("Unsupported type: {}", typ),
     }
 }
