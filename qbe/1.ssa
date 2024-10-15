@@ -1,0 +1,28 @@
+function w $print(w %x) {
+@start
+    call $printf(l $fmt, w %x)
+    ret 0
+}
+
+data $fmt = { b "%d\n", b 0 }
+
+export function w $foo1_2(w %x, w %y) {
+@start
+    %t1 =w add %x, %y
+    %z =w copy %t1
+    ret %z
+}
+
+export function w $t() {
+@start
+    ret 0
+}
+
+data $z = { w 0 }
+
+function w $init_z() {
+@start
+    %t2 =w call $foo1_2(5, %x)
+    storew %t2, $z
+    ret 0
+}
