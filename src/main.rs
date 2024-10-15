@@ -13,7 +13,7 @@ use pest_derive::Parser;
 #[grammar = "sp2.pest"]
 struct SP2parser;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AstNode {
     Program(Vec<AstNode>),
     FunctionDef {
@@ -41,6 +41,7 @@ pub enum AstNode {
     Identifier(String),
     IntLiteral(i64),
     StringLiteral(String),
+    TypeAnnotation(String),
 }
 
 fn parse_program(pair: Pair<Rule>) -> AstNode {
