@@ -1,28 +1,76 @@
-function w $print(w %x) {
+# Define the string constant for the format string.
+data $format_str = { b "%d ", b 0 }
+
+# Define the function to generate a random number using LCG.
+export function w $rand(w %seed) {
 @start
-    call $printf(l $fmt, w %x)
-    ret 0
+        # LCG parameters: a = 1103515245, c = 12345, m = 2^31
+        %a =w copy 1103515245
+        %c =w copy 12345
+        %m =w copy 2147483648  # 2^31
+
+        %seed1 =w mul %seed, %a
+        %seed2 =w add %seed1, %c
+        %seed3 =w urem %seed2, %m
+
+        ret %seed3
 }
 
-data $fmt = { b "%d\n", b 0 }
-
-export function w $foo1_2(w %x, w %y) {
+# Define the function to print the matrix.
+export function $print_matrix(l %matrix) {
 @start
-    %t1 =w add %x, %y
-    %z =w copy %t1
-    ret %z
+        %i =w copy 0
+@loop_outer
+        %j =w copy 0
+@loop_inner
+        %index =w mul %i, 10
+        %index =w add %index, %j
+        %index_l =l copy %index  # Copy to long
+        %addr =l add %matrix, %index_l
+        %val =w loadw %addr
+
+        # Print the value
+        %r =w call $printf(l $format_str, w %val)
+
+        %j =w add %j, 1
+        jnz %j, @loop_inner, @loop_outer_end
+@loop_outer_end
+        %i =w add %i, 1
+        jnz %i, @loop_outer, @end
+@end
+        ret
 }
 
-export function w $t() {
+# Define the main function to generate and print the matrix.
+export function w $main() {
 @start
-    ret 0
-}
+        # Allocate memory for the 10x10 matrix (100 words)
+        %matrix =l alloc4 400  # 100 * 4 bytes
 
-data $z = { w 0 }
+        %seed =w copy 1  # Initial seed for the random number generator
+        %i =w copy 0
+@loop_fill
+        %j =w copy 0
+@loop_fill_inner
+        %index =w mul %i, 10
+        %index =w add %index, %j
+        %index_l =l copy %index  # Copy to long
+        %addr =l add %matrix, %index_l
 
-function w $init_z() {
-@start
-    %t2 =w call $foo1_2(5, %x)
-    storew %t2, $z
-    ret 0
+        # Generate a random number
+        %seed =w call $rand(w %seed)
+
+        # Store the random number in the matrix
+        storew %seed, %addr
+
+        %j =w add %j, 1
+        jnz %j, @loop_fill_inner, @loop_fill_end
+@loop_fill_end
+        %i =w add %i, 1
+        jnz %i, @loop_fill, @print
+@print
+        # Print the matrix
+        call $print_matrix(l %matrix)
+
+        ret 0
 }

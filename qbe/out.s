@@ -1,52 +1,24 @@
-.text
-print:
-	pushq %rbp
-	movq %rsp, %rbp
-	movl %edi, %esi
-	leaq fmt(%rip), %rdi
-	callq printf
-	movl $0, %eax
-	leave
-	ret
-.type print, @function
-.size print, .-print
-/* end function print */
-
 .data
 .balign 8
-fmt:
-	.ascii "%d\n"
+format_str:
+	.ascii "%d "
 	.byte 0
 /* end data */
 
 .text
-.globl foo1_2
-foo1_2:
+.globl rand
+rand:
 	pushq %rbp
 	movq %rsp, %rbp
-	movl %edi, %eax
-	addl %esi, %eax
+	imull $1103515245, %edi, %eax
+	addl $12345, %eax
+	movl $2147483648, %ecx
+	movl $0, %edx
+	divl %ecx
+	movl %edx, %eax
 	leave
 	ret
-.type foo1_2, @function
-.size foo1_2, .-foo1_2
-/* end function foo1_2 */
-
-.text
-.globl t
-t:
-	pushq %rbp
-	movq %rsp, %rbp
-	movl $0, %eax
-	leave
-	ret
-.type t, @function
-.size t, .-t
-/* end function t */
-
-.data
-.balign 8
-z:
-	.int 0
-/* end data */
+.type rand, @function
+.size rand, .-rand
+/* end function rand */
 
